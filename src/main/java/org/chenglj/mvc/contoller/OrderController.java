@@ -1,11 +1,11 @@
 package org.chenglj.mvc.contoller;
 
-import org.chenglj.mvc.OrderService;
+import org.chenglj.mvc.service.OrderService;
 import org.chenglj.mvc.annotation.Autowire;
 import org.chenglj.mvc.annotation.Controller;
 import org.chenglj.mvc.annotation.RequestMapping;
-
-import java.lang.reflect.Field;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /*
  * @Description 
@@ -16,14 +16,17 @@ import java.lang.reflect.Field;
 @RequestMapping(value = "/order")
 public class OrderController {
 
+    private Logger logger = LoggerFactory.getLogger(OrderController.class);
+
     @Autowire
     private OrderService orderService;
 
 
     @RequestMapping(value = "/query")
     public Object query(){
-        System.out.println("反射调用成功");
-        return "查询成功!success";
+        logger.info("request url invoked controller method");
+        String result = orderService.queryOrder();
+        return result;
     }
 
 

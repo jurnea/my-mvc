@@ -3,7 +3,10 @@ package org.chenglj.mvc.servlet;
 import org.chenglj.mvc.annotation.Autowire;
 import org.chenglj.mvc.annotation.Controller;
 import org.chenglj.mvc.annotation.RequestMapping;
+import org.chenglj.mvc.annotation.Service;
 import org.chenglj.mvc.entity.Mapping;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -27,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
  **/
 public class DispatcherServlet extends HttpServlet {
 
+    private Logger logger = LoggerFactory.getLogger(DispatcherServlet.class);
 
     List<String> classNames = new ArrayList<>();
 
@@ -34,6 +38,7 @@ public class DispatcherServlet extends HttpServlet {
     private Map<String,Object> beans = new ConcurrentHashMap();
 
     private Map<String, Mapping> mappings = new ConcurrentHashMap<>();
+
     @Override
     public void init(ServletConfig config) throws ServletException {
         super.init(config);
@@ -53,19 +58,20 @@ public class DispatcherServlet extends HttpServlet {
                 RequestMapping requestMappingAnnotation = beanClazz.getDeclaredAnnotation(RequestMapping.class);
                 //既有Controller注解也有RequestMapping注解
                 if(controllerPresent && requestMappingAnnotation != null){
-                    //类上的注解内容
+                    //类上的注解@RequestMapping中的值
                     String classMappingValue = requestMappingAnnotation.value();
-                    Method[] declaredFields = beanClazz.getDeclaredMethods();
-                    for (Method declaredField : declaredFields) {
-                        RequestMapping annotation = declaredField.getAnnotation(RequestMapping.class);
+                    Method[] declaredMethods = beanClazz.getDeclaredMethods();
+                    for (Method method : declaredMethods) {
+                        RequestMapping annotation = method.getAnnotation(RequestMapping.class);
                         if(annotation == null){
                             continue;
                         }
+                        //方法中@RequestMapping的值
                         String methodMappingValue = annotation.value();
 
                         String url = classMappingValue+methodMappingValue;
-                        mappings.put(url,new Mapping(entry.getKey(),declaredField));
-                        System.out.println("初始化["+url+"] ->"+declaredField.getName());
+                        mappings.put(url,new Mapping(entry.getKey(),method));
+                        logger.info("初始化[{}}] -> {}",url,method.getName());
                     }
 
 
@@ -85,24 +91,22 @@ public class DispatcherServlet extends HttpServlet {
     }
     private void addDependency() {
 
-        System.out.println("add==");
+        logger.info("staring add bean dependency");
         try {
             for (Map.Entry<String, Object> entry : beans.entrySet()) {
-                //获取所有的属性，父类？
+                //获取所有的属性field
                 Field[] fields = entry.getValue().getClass().getDeclaredFields();
-                System.out.println(fields);
                 for (Field field : fields) {
                     Autowire annotation = field.getAnnotation(Autowire.class);
                     if(annotation != null){
                         field.setAccessible(true);
-                        Class<? extends Field> aClass = field.getClass();
-                        System.out.println(aClass);
-                        field.set(entry.getValue(),beans.get(aClass.getName()));
+                        String className = field.getType().getName();
+                        field.set(entry.getValue(),beans.get(className));
                     }
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("add bean dependency error !",e);
         }
     }
 
@@ -110,34 +114,44 @@ public class DispatcherServlet extends HttpServlet {
         try {
             for (String className : classNames) {
 
-                Class<?> clazz = Class.forName(className);
-                Controller annotation = clazz.getAnnotation(Controller.class);
-                if(annotation != null){
-                    Object obj = clazz.newInstance();
-                    beans.put(clazz.getName(),obj);
+
+                try {
+                    Class<?> clazz = Class.forName(className);
+                    if(clazz.isAnnotationPresent(Controller.class)
+                            || clazz.isAnnotationPresent(Service.class)){
+                        Object obj = clazz.newInstance();
+                        beans.put(clazz.getName(),obj);
+                        logger.info("init bean ：{}",clazz.getName());
+                    }
+                } catch (ClassNotFoundException e) {
+                    e.printStackTrace();
+                } catch (InstantiationException e) {
+                    e.printStackTrace();
+                } catch (IllegalAccessException e) {
+                    e.printStackTrace();
                 }
             }
+            // 初始化bean 完成后className销毁
+            classNames.clear();
+            classNames = null;
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("new instance error",e);
         }
     }
 
     //进行包扫描
     public String scanPackage(String backPackage){
-        System.out.println("backPackage:"+backPackage);
+        logger.info("扫描包：backPackage->{}",backPackage);
         String path = DispatcherServlet.class.getClassLoader().getResource(backPackage).getPath();
         File filePath = new File(path);
         File[] files = filePath.listFiles();
         for (File file : files) {
-            System.out.println(file.getName()+"--"+file.getAbsoluteFile());
             if(file.isDirectory()){
                 scanPackage(backPackage+file.getName()+"/");
-
             } else {
                 //不是目录，加载完整类名
                 String name = file.getName().substring(0,file.getName().lastIndexOf("."));
                 String className = backPackage.replaceAll("\\/",".")+name;
-                System.out.println(className);
                 classNames.add(className);
             }
 
@@ -158,6 +172,7 @@ public class DispatcherServlet extends HttpServlet {
         String requestURI = req.getRequestURI();
         String contextPath = req.getContextPath();
         String url = requestURI.replaceAll(contextPath, "");
+        logger.info("request url [{}]",url);
         Mapping mapping = mappings.get(url);
         if( mapping !=null){
             Object controllerObj = beans.get(mapping.getClassName());
@@ -166,7 +181,7 @@ public class DispatcherServlet extends HttpServlet {
                 Object invokeResult = method.invoke(controllerObj);
                 resp.setContentType("application/json;charset=utf-8");
                 resp.getWriter().write((String)invokeResult);
-                System.out.println(invokeResult);
+                logger.info("返回内容:{}",invokeResult);
             } catch (IllegalAccessException e) {
                 e.printStackTrace();
             } catch (InvocationTargetException e) {
