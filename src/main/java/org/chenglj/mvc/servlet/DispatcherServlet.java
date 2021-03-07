@@ -15,10 +15,12 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.IOException;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -42,6 +44,7 @@ public class DispatcherServlet extends HttpServlet {
     @Override
     public void init(ServletConfig config) throws ServletException {
         super.init(config);
+
         scanPackage("");
         newInstance();
         addDependency();
@@ -52,7 +55,7 @@ public class DispatcherServlet extends HttpServlet {
     private void addMapping() {
         try {
             for (Map.Entry<String, Object> entry : beans.entrySet()) {
-                //获取所有的属性，父类？
+                //获取所有的属性
                 Class<?> beanClazz = entry.getValue().getClass();
                 boolean controllerPresent = beanClazz.isAnnotationPresent(Controller.class);
                 RequestMapping requestMappingAnnotation = beanClazz.getDeclaredAnnotation(RequestMapping.class);
@@ -78,7 +81,7 @@ public class DispatcherServlet extends HttpServlet {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("add mapping error",e);
         }
     }
 
@@ -131,7 +134,7 @@ public class DispatcherServlet extends HttpServlet {
                     e.printStackTrace();
                 }
             }
-            // 初始化bean 完成后className销毁
+            // 初始化bean完成后className销毁
             classNames.clear();
             classNames = null;
         } catch (Exception e) {
@@ -140,7 +143,7 @@ public class DispatcherServlet extends HttpServlet {
     }
 
     //进行包扫描
-    public String scanPackage(String backPackage){
+    public void scanPackage(String backPackage) {
         logger.info("扫描包：backPackage->{}",backPackage);
         String path = DispatcherServlet.class.getClassLoader().getResource(backPackage).getPath();
         File filePath = new File(path);
@@ -149,14 +152,17 @@ public class DispatcherServlet extends HttpServlet {
             if(file.isDirectory()){
                 scanPackage(backPackage+file.getName()+"/");
             } else {
-                //不是目录，加载完整类名
-                String name = file.getName().substring(0,file.getName().lastIndexOf("."));
-                String className = backPackage.replaceAll("\\/",".")+name;
+                if(!file.getName().endsWith(".class")){
+                    continue;
+                }
+                //不是目录，加载完整类名 simpleName -> OrderController
+                String simpleName = file.getName().substring(0,file.getName().lastIndexOf("."));
+                String className = backPackage.replaceAll("\\/",".")+simpleName;
                 classNames.add(className);
+
             }
 
         }
-        return null;
     }
 
 
